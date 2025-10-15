@@ -308,7 +308,8 @@ async def test_connection():
         test_crew = Crew(
             agents=[test_agent],
             tasks=[test_task],
-            verbose=1
+            verbose=1,
+            tracing=0
         )
         
         result = test_crew.kickoff()
@@ -440,4 +441,4 @@ async def reset_conversation():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("BACKEND_PORT", 8000)))
