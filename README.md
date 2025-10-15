@@ -203,6 +203,70 @@ The backend provides the following endpoints:
 - `GET /api/conversation-history` - Get conversation history
 - `POST /api/reset` - Reset conversation
 
+### API CURL Examples
+
+```bash
+curl --location --request POST 'http://localhost:8000/'
+```
+```json
+{
+    "status": "Shark Tank Chat API is running"
+}
+```
+```bash
+curl --location --request POST 'http://localhost:8000/api/test-connection'
+```
+```json
+{
+    "status": "success",
+    "message": "Connection test successful",
+    "api_type": "AZURE",
+    "response": "Hello, the connection is working! I am using the OpenAI API."
+}
+```
+```bash
+curl --location 'http://localhost:8000/api/start-pitch' \
+--header 'Content-Type: application/json' \
+--data '{
+  "business_idea": {
+    "name": "EcoTrack",
+    "description": "A smart home energy management system that uses AI to optimize energy usage",
+    "target_market": "Environmentally conscious homeowners and small businesses",
+    "revenue_model": "Hardware sales + monthly subscription for premium features",
+    "current_traction": "500 beta users, $50,000 in pre-orders",
+    "investment_needed": "$300,000 for 10% equity",
+    "use_of_funds": "Product refinement, marketing, and team expansion"
+  },
+  "judges": [
+    {
+      "name": "Mark Cuban",
+      "role": "Shark Tank Judge",
+      "goal": "Evaluate business pitches critically and decide whether to invest",
+      "backstory": "You are a successful entrepreneur and investor on Shark Tank. You have a keen eye for promising businesses and can quickly identify flaws in business models. You are tough but fair, and you always ask penetrating questions about revenue, margins, customer acquisition costs, and scaling strategies. You'\''re not afraid to say '\''I'\''m out'\'' if the numbers don'\''t add up or if you don'\''t believe in the entrepreneur'\''s ability to execute."
+    }
+  ],
+  "entrepreneur_name": "Alex Johnson"
+}'
+```
+```json
+{
+    "response": "Responses from 1 judge(s)",
+    "sender": "Judge",
+    "conversation_history": [
+        {
+            "role": "Entrepreneur",
+            "content": "Hello Sharks, I'm Alex Johnson, and today I'm excited to present to you EcoTrack, a revolutionary smart home energy management system that leverages the power of AI to optimize energy usage for environmentally conscious homeowners and small businesses.\n\nAs we all know, energy consumption is a leading contributor to climate change. Many homeowners and small businesses struggle to monitor and control their energy usage, leading to high costs and inefficiency. EcoTrack addresses this pressing issue by providing real-time energy monitoring, automated optimization suggestions, and AI-driven insights that empower users to reduce their carbon footprint and save money.\n\nOur target market is booming; with the rising awareness of sustainability, there are millions of environmentally conscious homeowners and small businesses looking for innovative solutions. We have already gained traction with 500 beta users and received $50,000 in pre-orders, validating our market demand and the effectiveness of our product.\n\nWhat sets EcoTrack apart is not just our cutting-edge technology but our team. Our diverse team combines years of expertise in AI, renewable energy, and consumer electronics. We are uniquely positioned to lead this market, offering a blend of technical innovation and user-friendly design that resonates with our target customers.\n\nToday, I'm seeking a $300,000 investment for 10% equity in EcoTrack. This funding will be instrumental in refining our product, ramping up marketing efforts, and expanding our team to meet growing demand. \n\nWith your investment, we can accelerate our growth, make a significant impact on energy consumption, and pave the way for a sustainable future. Thank you for considering EcoTrack as your next investment!",
+            "sender_name": "Alex Johnson"
+        },
+        {
+            "role": "Judge",
+            "content": "Your final answer must include a thorough evaluation and critical questioning of the entrepreneur's pitch, focusing on the revenue model, customer acquisition costs, financial scalability, marketing differentiation, operational strategy, and potential challenges before making a final investment decision.",
+            "judge_name": "Mark Cuban"
+        }
+    ]
+}
+```
+
 ## Troubleshooting
 
 ### LiteLLM Issues
@@ -214,9 +278,9 @@ The application uses **litellm==1.74.9** (exact version from the notebooks) to e
 pip show litellm
 ```
 
-2. Ensure your API keys are correctly set in `.env`
+1. Ensure your API keys are correctly set in `.env`
 
-3. Test the connection using the `/api/test-connection` endpoint
+2. Test the connection using the `/api/test-connection` endpoint
 
 ### Connection Issues
 
