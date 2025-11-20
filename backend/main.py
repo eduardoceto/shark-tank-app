@@ -104,12 +104,62 @@ entrepreneur_name: str = ""  # Store entrepreneur name
 
 def create_judge_agents(judges: List[JudgeAgent]) -> List[Agent]:
     """
-    Create judge agents from the provided configurations
-    Original: Single judge_agent in notebook
-    New: Support for multiple judges
+    Create judge agents from the provided configurations.
+    Enhanced version with special logic for the Market Judge.
     """
     agents = []
+
     for judge in judges:
+
+        # Market Judge
+
+        if judge.role.lower() == "market judge":
+            judge.goal = """
+            Evaluate the startup strictly from a market perspective:
+            • Customer segmentation
+            • Market demand strength
+            • Pain point validation
+            • Competitive landscape
+            • Product differentiation
+            • CAC vs LTV feasibility
+            • Pricing and distribution strategy
+            • Real evidence of market validation
+
+            You must ask a MAXIMUM of 3 market-related questions.
+            Rules:
+            1. Only ONE question per turn.
+            2. Only market-focused questions (no finance, no tech).
+            3. Never repeat a question.
+            4. After asking 3 total questions → you MUST give a final decision:
+               - "I will invest because..."
+               - "I'm out because..."
+            """
+
+            judge.backstory = """
+            You are a Shark Tank Market Judge.
+            You are analytical, data-driven, and skeptical about exaggerated claims.
+            Your expertise includes:
+            • market analysis
+            • competitive research
+            • customer psychology
+            • go-to-market strategy
+            • growth patterns and validation signals
+
+            Your style:
+            • Direct but professional
+            • Always challenging assumptions
+            • Demand evidence, not buzzwords
+            • Drill into gaps in logic or weak positioning
+
+            Behavioral Rules:
+            • Ask 1 question per message.
+            • Only market questions.
+            • No repetitive questions.
+            • Stop after 3 questions and deliver a final verdict.
+            """
+
+        # Instance
+
         agent = Agent(
             role=judge.role,
             goal=judge.goal,
@@ -118,25 +168,41 @@ def create_judge_agents(judges: List[JudgeAgent]) -> List[Agent]:
             allow_delegation=False,
             llm=LLM(model=model_string)
         )
+
         agents.append(agent)
         logger.info(f"Created judge agent: {judge.name}")
-    
+
     return agents
+
 
 def create_entrepreneur_agent() -> Agent:
     """
     Create the entrepreneur agent (user's proxy in the system)
     Original: entrepreneur_agent from entrepreneur notebook Step 7
     """
+
     agent = Agent(
-        role="Tech Startup Entrepreneur",
-        goal="Pitch your innovative business idea and secure investment",
-        backstory="""You are a passionate entrepreneur with an innovative tech startup.
-        You've developed a revolutionary product and are seeking investment to scale your business.
-        You're confident in your product, but you need to convince the Shark Tank judges
-        that your business model is sound and that you have a clear path to profitability.
-        You understand your market well and have some early traction with customers.""",
-        verbose=True,
+        role="Entrepreneur",
+        goal="""
+Pitch your startup clearly, defend your business model, and answer judge questions 
+with persuasive, logical, and data-backed reasoning. Your mission is to secure investment.
+""",
+        backstory="""
+You are an articulate, ambitious, well-prepared founder presenting your startup 
+in a Shark Tank environment. You deeply understand your:
+• Market  
+• Customer  
+• Product  
+• Traction  
+• Competition  
+• Revenue strategy  
+• Long-term vision  
+
+You communicate with confidence, clarity, and structure.
+You NEVER ramble, NEVER contradict yourself, and ALWAYS support claims with logic/data.
+If a judge challenges you, respond professionally, strategically, and convincingly.
+""",
+        verbose=False,
         allow_delegation=False,
         llm=LLM(model=model_string)
     )
@@ -442,3 +508,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("BACKEND_PORT", 8000)))
+
