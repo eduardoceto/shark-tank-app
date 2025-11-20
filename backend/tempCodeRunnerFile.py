@@ -52,7 +52,6 @@ elif API_TYPE == "azure":
     os.environ["AZURE_API_BASE"] = AZURE_ENDPOINT
     os.environ["AZURE_API_VERSION"] = AZURE_API_VERSION
     
-
     model_string = f"azure/{AZURE_DEPLOYMENT}"
     logger.info(f"Using Azure OpenAI API with deployment: {AZURE_DEPLOYMENT}")
 else:
