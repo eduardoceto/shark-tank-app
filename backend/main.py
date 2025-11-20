@@ -98,7 +98,7 @@ entrepreneur_name: str = ""  # Store entrepreneur name
 def create_default_judge_agents() -> List[Agent]:
     """
     Create 3 default Shark Tank judge agents:
-    - Market Judge (with full strict rules from original code)
+    - Market Judge 
     - Finance Judge
     - Technology Judge
     """
