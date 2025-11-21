@@ -52,7 +52,6 @@ elif API_TYPE == "azure":
     os.environ["AZURE_API_BASE"] = AZURE_ENDPOINT
     os.environ["AZURE_API_VERSION"] = AZURE_API_VERSION
     
-
     model_string = f"azure/{AZURE_DEPLOYMENT}"
     logger.info(f"Using Azure OpenAI API with deployment: {AZURE_DEPLOYMENT}")
 else:
@@ -81,16 +80,16 @@ class ChatResponse(BaseModel):
     response: str
     sender: str
     conversation_history: List[Dict[str, str]]
-
+    judge_responses: Optional[List[Dict[str, str]]] = None
 
 # ===== STEP 3: Global State =====
-
 
 conversation_history: List[Dict[str, str]] = []
 current_business_idea: Optional[BusinessIdea] = None
 judge_agents: List[Agent] = []
-current_judges_config: List[Dict[str, str]] = []  # Store judge names for message attribution
-entrepreneur_name: str = ""  # Store entrepreneur name
+current_judges_config: List[Dict[str, str]] = []
+entrepreneur_name: str = ""
+judge_collaboration_history: List[Dict[str, str]] = []  # Track judge-to-judge communication
 
 # ===== STEP 4: Agent Creation Functions =====
 # Migrated from Step 7 (judge notebook) and Step 7 (entrepreneur notebook)
@@ -104,8 +103,6 @@ def create_default_judge_agents() -> List[Agent]:
     """
 
     default_judges = [
-        
-# Market Judge
         {
             "name": "Sophia",
             "role": "Market Judge",
@@ -119,6 +116,8 @@ def create_default_judge_agents() -> List[Agent]:
             • CAC vs LTV feasibility
             • Pricing and distribution strategy
             • Real evidence of market validation
+
+            You can collaborate with other judges by considering their perspectives.
 
             You must ask a MAXIMUM of 3 market-related questions.
 
@@ -145,6 +144,7 @@ def create_default_judge_agents() -> List[Agent]:
             • Always challenging assumptions
             • Demand evidence, not buzzwords
             • Drill into gaps in logic or weak positioning
+            • You collaborate with other judges and consider their perspectives
 
             Behavioral Rules:
             • Ask 1 question per message.
@@ -153,10 +153,6 @@ def create_default_judge_agents() -> List[Agent]:
             • Stop after 3 questions and deliver a final verdict.
             """
         },
-
-        
-        # Finance Judge
-        
         {
             "name": "Marcus",
             "role": "Finance Judge",
@@ -171,6 +167,8 @@ def create_default_judge_agents() -> List[Agent]:
             • Scalability of the economics
             • Opportunity cost of investment
 
+            You can collaborate with other judges by considering their perspectives.
+
             Rules:
             1. Ask ONLY financial questions.
             2. One question per turn.
@@ -181,12 +179,9 @@ def create_default_judge_agents() -> List[Agent]:
             You are Marcus, a former Wall Street private equity analyst and fractional CFO.
             You excel at tearing down unrealistic financial projections and exposing hidden risks.
             You speak with surgical financial precision, challenge every number, and tolerate no fluff.
+            You collaborate with other judges and consider their perspectives when making decisions.
             """
         },
-
-        
-        # Technology Judge
-        
         {
             "name": "Elena",
             "role": "Technology Judge",
@@ -203,6 +198,8 @@ def create_default_judge_agents() -> List[Agent]:
             • Infrastructure costs vs growth
             • Real innovation vs buzzwords
 
+            You can collaborate with other judges by considering their perspectives.
+
             Rules:
             1. Ask ONE technical question per message.
             2. No general business or financial questions.
@@ -213,6 +210,7 @@ def create_default_judge_agents() -> List[Agent]:
             You are Elena, a senior CTO with 20 years designing scalable distributed systems.
             You are highly technical, allergic to vague buzzwords, and hyper-focused on clarity.
             You quickly spot unrealistic architecture, weak engineering planning, or security flaws.
+            You collaborate with other judges and consider their perspectives when making decisions.
             """
         }
     ]
@@ -230,11 +228,9 @@ def create_default_judge_agents() -> List[Agent]:
         )
 
         agents.append(agent)
-        logger.info(f"Created default judge agent: {judge['name']}")
+        logger.info(f"Created judge agent: {judge['name']}")
 
     return agents
-
-
 
 def create_entrepreneur_agent() -> Agent:
     """
@@ -310,25 +306,37 @@ def generate_initial_pitch(business_idea: BusinessIdea, entrepreneur_name: str) 
     result = crew.kickoff()
     return result.raw
 
-def generate_judge_response(business_idea: BusinessIdea, conversation: List[Dict[str, str]]) -> List[tuple[str, str]]:
+async def generate_judge_responses_with_collaboration(
+    business_idea: BusinessIdea, 
+    conversation: List[Dict[str, str]]
+) -> List[Dict[str, str]]:
     """
-    Generate judge's response to the entrepreneur's pitch or message
-    Original: submit_message endpoint logic from judge notebook Step 7
-    Modified: Now returns responses from ALL judges, not just the first one
-    Returns: List of (response_text, judge_name) tuples
+    Generate judge responses with inter-judge collaboration
+    Judges can see each other's responses
+    Returns: List of judge response dictionaries with collaboration context
     """
     if not judge_agents:
         raise HTTPException(status_code=400, detail="No judges configured")
     
     responses = []
     context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation])
+    
+    # Build collaboration context from previous judge responses
+    collaboration_context = ""
+    if judge_collaboration_history:
+        collaboration_context = "\n\nOther Judges' Recent Perspectives:\n"
+        for judge_msg in judge_collaboration_history[-6:]:  # Last 6 judge messages
+            judge_name = judge_msg.get("judge_name", "Unknown")
+            content = judge_msg.get("content", "")[:200]
+            collaboration_context += f"- {judge_name}: {content}...\n"
 
-    # Generate response from EACH judge
+    # Generate response from EACH judge with collaboration context
     for idx, judge_agent in enumerate(judge_agents):
         judge_name = current_judges_config[idx]['name'] if idx < len(current_judges_config) else f"Judge {idx + 1}"
+        judge_role = current_judges_config[idx]['role'] if idx < len(current_judges_config) else judge_agent.role
         
         task = Task(
-            description=f"""You are {judge_name}. Evaluate the entrepreneur's pitch and respond appropriately.
+            description=f"""You are {judge_name}, the {judge_role}. Evaluate the entrepreneur's pitch and respond appropriately.
 
             Business being evaluated:
             Name: {business_idea.name}
@@ -341,13 +349,21 @@ def generate_judge_response(business_idea: BusinessIdea, conversation: List[Dict
 
             Conversation history:
             {context}
+            
+            {collaboration_context}
+
+            IMPORTANT COLLABORATION INSTRUCTIONS:
+            - Consider the perspectives of other judges mentioned above
+            - You can reference or build upon their questions/concerns
+            - If another judge has raised a valid point, you can acknowledge it
+            - However, maintain your own unique perspective and expertise
 
             Respond with your thoughts, questions or investment decision. Be critical but constructive.
             If you need more information, ask specific questions. If you have enough information,
             make your final investment decision.
             
             IMPORTANT: Start your response with "{judge_name}: " to identify yourself clearly.""",
-            expected_output="Evaluation and feedback on the entrepreneur's pitch",
+            expected_output="Evaluation and feedback on the entrepreneur's pitch with consideration of other judges' perspectives",
             agent=judge_agent,
         )
 
@@ -357,7 +373,20 @@ def generate_judge_response(business_idea: BusinessIdea, conversation: List[Dict
         )
 
         result = crew.kickoff()
-        responses.append((result.raw, judge_name))
+        
+        response_dict = {
+            "judge_name": judge_name,
+            "judge_role": judge_role,
+            "content": result.raw
+        }
+        
+        responses.append(response_dict)
+        
+        # Add to collaboration history for next round
+        judge_collaboration_history.append({
+            "judge_name": judge_name,
+            "content": result.raw
+        })
     
     return responses
 
@@ -456,11 +485,12 @@ async def start_pitch(request: ChatRequest):
     Initialize a new pitch session
     Original: initiate_pitch() from entrepreneur notebook
     """
-    global conversation_history, current_business_idea, judge_agents, current_judges_config, entrepreneur_name
+    global conversation_history, current_business_idea, judge_agents, current_judges_config, entrepreneur_name, judge_collaboration_history
     
     try:
         # Reset conversation
         conversation_history = []
+        judge_collaboration_history = []
         current_business_idea = request.business_idea
         entrepreneur_name = request.entrepreneur_name or "Entrepreneur"
         
@@ -472,10 +502,9 @@ async def start_pitch(request: ChatRequest):
             {"name": "Sophia", "role": "Market Judge"},
             {"name": "Marcus", "role": "Finance Judge"},
             {"name": "Elena",  "role": "Technology Judge"},
-]
+        ]
 
-        
-        # Generate initial pitch with entrepreneur name
+        # Generate initial pitch
         initial_pitch = generate_initial_pitch(request.business_idea, entrepreneur_name)
         
         # Add to conversation history
@@ -485,21 +514,32 @@ async def start_pitch(request: ChatRequest):
             "sender_name": entrepreneur_name
         })
         
-        # Generate responses from ALL judges
-        judge_responses = generate_judge_response(request.business_idea, conversation_history)
+        # Generate responses from ALL judges with collaboration
+        judge_responses = await generate_judge_responses_with_collaboration(
+            request.business_idea, 
+            conversation_history
+        )
         
         # Add all judge responses to conversation history
-        for judge_response, judge_name in judge_responses:
+        judge_response_list = []
+        for judge_response in judge_responses:
             conversation_history.append({
                 "role": "Judge",
-                "content": judge_response,
-                "judge_name": judge_name
+                "content": judge_response["content"],
+                "judge_name": judge_response["judge_name"],
+                "judge_role": judge_response["judge_role"]
+            })
+            judge_response_list.append({
+                "judge_name": judge_response["judge_name"],
+                "judge_role": judge_response["judge_role"],
+                "content": judge_response["content"]
             })
         
         return ChatResponse(
             response=f"Responses from {len(judge_responses)} judge(s)",
             sender="Judge",
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            judge_responses=judge_response_list
         )
         
     except Exception as e:
@@ -518,28 +558,39 @@ async def send_message(message: Message):
         raise HTTPException(status_code=400, detail="No active pitch session. Please start a pitch first.")
     
     try:
-        # Add user's message to history with entrepreneur name
+        # Add user's message to history
         conversation_history.append({
             "role": message.sender,
             "content": message.content,
             "sender_name": entrepreneur_name
         })
         
-        # Generate responses from ALL judges
-        judge_responses = generate_judge_response(current_business_idea, conversation_history)
+        # Generate responses from ALL judges with collaboration
+        judge_responses = await generate_judge_responses_with_collaboration(
+            current_business_idea, 
+            conversation_history
+        )
         
         # Add all judge responses to conversation history
-        for judge_response, judge_name in judge_responses:
+        judge_response_list = []
+        for judge_response in judge_responses:
             conversation_history.append({
                 "role": "Judge",
-                "content": judge_response,
-                "judge_name": judge_name
+                "content": judge_response["content"],
+                "judge_name": judge_response["judge_name"],
+                "judge_role": judge_response["judge_role"]
+            })
+            judge_response_list.append({
+                "judge_name": judge_response["judge_name"],
+                "judge_role": judge_response["judge_role"],
+                "content": judge_response["content"]
             })
         
         return ChatResponse(
             response=f"Responses from {len(judge_responses)} judge(s)",
             sender="Judge",
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            judge_responses=judge_response_list
         )
         
     except Exception as e:
@@ -550,19 +601,20 @@ async def send_message(message: Message):
 async def get_conversation_history():
     """
     Get the current conversation history
-    Original: check_conversation() from both notebooks and get_conversation_history endpoint
     """
     return {
         "conversation_history": conversation_history,
-        "business_idea": current_business_idea.dict() if current_business_idea else None
+        "business_idea": current_business_idea.dict() if current_business_idea else None,
+        "judge_collaboration_history": judge_collaboration_history
     }
 
 @app.post("/api/reset")
 async def reset_conversation():
     """Reset the conversation and start fresh"""
-    global conversation_history, current_business_idea, judge_agents, current_judges_config, entrepreneur_name
+    global conversation_history, current_business_idea, judge_agents, current_judges_config, entrepreneur_name, judge_collaboration_history
     
     conversation_history = []
+    judge_collaboration_history = []
     current_business_idea = None
     judge_agents = []
     current_judges_config = []
@@ -570,8 +622,15 @@ async def reset_conversation():
     
     return {"status": "success", "message": "Conversation reset"}
 
+@app.get("/api/judges")
+async def get_judges():
+    """Get information about active judges"""
+    return {
+        "judges": current_judges_config,
+        "count": len(current_judges_config)
+    }
+
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("BACKEND_PORT", 8000)))
-

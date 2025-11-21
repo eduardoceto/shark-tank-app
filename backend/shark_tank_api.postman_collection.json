@@ -1,0 +1,268 @@
+{
+	"info": {
+		"_postman_id": "shark-tank-api-collection",
+		"name": "Shark Tank Multi-Agent API",
+		"description": "Collection for testing the Shark Tank multi-agent system with inter-judge collaboration and MCP integration",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						""
+					]
+				},
+				"description": "Check if the API is running"
+			},
+			"response": []
+		},
+		{
+			"name": "Test Connection",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/test-connection",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"test-connection"
+					]
+				},
+				"description": "Test the API connection and LLM configuration"
+			},
+			"response": []
+		},
+		{
+			"name": "Get MCP Servers",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/mcp-servers",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"mcp-servers"
+					]
+				},
+				"description": "Get configured MCP server endpoints"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Judges",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/judges",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"judges"
+					]
+				},
+				"description": "Get information about active judges"
+			},
+			"response": []
+		},
+		{
+			"name": "Start Pitch",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"business_idea\": {\n        \"name\": \"EcoClean Solutions\",\n        \"description\": \"A sustainable cleaning product company using plant-based ingredients\",\n        \"target_market\": \"Environmentally conscious consumers aged 25-45\",\n        \"revenue_model\": \"Direct-to-consumer online sales with subscription model\",\n        \"current_traction\": \"500 active subscribers, $25K MRR, 4.8/5 customer rating\",\n        \"investment_needed\": \"$250,000\",\n        \"use_of_funds\": \"Marketing (40%), Product development (30%), Operations (20%), Team expansion (10%)\"\n    },\n    \"entrepreneur_name\": \"Alex Johnson\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/start-pitch",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"start-pitch"
+					]
+				},
+				"description": "Start a new pitch session. This initializes the conversation with all three judges."
+			},
+			"response": []
+		},
+		{
+			"name": "Send Message (Entrepreneur Response)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"content\": \"Our target market research shows that 68% of millennials prioritize eco-friendly products. We've validated this through customer surveys and A/B testing. Our CAC is $15 and LTV is $180, giving us a 12:1 ratio.\",\n    \"sender\": \"Entrepreneur\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/send-message",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"send-message"
+					]
+				},
+				"description": "Send a message from the entrepreneur. All three judges will respond with collaboration context."
+			},
+			"response": []
+		},
+		{
+			"name": "Get Conversation History",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/conversation-history",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"conversation-history"
+					]
+				},
+				"description": "Get the full conversation history including judge collaboration"
+			},
+			"response": []
+		},
+		{
+			"name": "Reset Conversation",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/reset",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"reset"
+					]
+				},
+				"description": "Reset the conversation and clear all state"
+			},
+			"response": []
+		},
+		{
+			"name": "Start Pitch - Tech Startup Example",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"business_idea\": {\n        \"name\": \"AI Tutor Pro\",\n        \"description\": \"An AI-powered personalized tutoring platform for K-12 students\",\n        \"target_market\": \"Parents of K-12 students seeking personalized education\",\n        \"revenue_model\": \"Subscription-based SaaS: $29/month per student\",\n        \"current_traction\": \"1,200 active users, $35K MRR, 92% retention rate\",\n        \"investment_needed\": \"$500,000\",\n        \"use_of_funds\": \"AI model training (35%), Sales & Marketing (30%), Platform development (25%), Team (10%)\"\n    },\n    \"entrepreneur_name\": \"Sarah Chen\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/start-pitch",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"start-pitch"
+					]
+				},
+				"description": "Example pitch for a tech startup"
+			},
+			"response": []
+		},
+		{
+			"name": "Send Message - Follow-up Question",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"content\": \"We use a microservices architecture with Kubernetes for scalability. Our security is SOC 2 compliant and we use end-to-end encryption for all student data.\",\n    \"sender\": \"Entrepreneur\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/api/send-message",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"send-message"
+					]
+				},
+				"description": "Example follow-up message addressing technical concerns"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		}
+	]
+}
+
