@@ -6,7 +6,7 @@ Migrated from Jupyter notebooks to web application
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union
 import os
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew, LLM
@@ -66,9 +66,14 @@ class Message(BaseModel):
 class BusinessIdea(BaseModel):
     name: str
     description: str
+    problem_statement: Optional[str] = None
+    solution: Optional[str] = None
+    technical_foundation: Optional[str] = None
     target_market: str
-    revenue_model: str
+    revenue_model: Union[str, Dict[str, str]]
+    value_proposition: Optional[str] = None
     current_traction: str
+    vision: Optional[str] = None
     investment_needed: str
     use_of_funds: str
 
@@ -82,6 +87,57 @@ class ChatResponse(BaseModel):
     conversation_history: List[Dict[str, str]]
     judge_responses: Optional[List[Dict[str, str]]] = None
 
+
+def format_revenue_model(revenue_model: Union[str, Dict[str, str]]) -> str:
+    """
+    Convert the revenue model field into a readable string
+    """
+    if isinstance(revenue_model, str):
+        return revenue_model
+
+    if isinstance(revenue_model, dict):
+        parts = []
+        for label, explanation in revenue_model.items():
+            parts.append(f"{label}: {explanation}")
+        return "\n".join(parts)
+
+    return "Not specified"
+
+
+def business_idea_summary(business_idea: BusinessIdea) -> str:
+    """
+    Build a detailed multi-line summary of the business idea
+    """
+    lines = [
+        f"Name: {business_idea.name}",
+        f"Description: {business_idea.description}",
+    ]
+
+    if business_idea.problem_statement:
+        lines.append(f"Problem Statement: {business_idea.problem_statement}")
+
+    if business_idea.solution:
+        lines.append(f"Solution: {business_idea.solution}")
+
+    if business_idea.technical_foundation:
+        lines.append(f"Technical Foundation: {business_idea.technical_foundation}")
+
+    lines.append(f"Target Market: {business_idea.target_market}")
+    lines.append(f"Revenue Model:\n{format_revenue_model(business_idea.revenue_model)}")
+
+    if business_idea.value_proposition:
+        lines.append(f"Value Proposition: {business_idea.value_proposition}")
+
+    lines.append(f"Current Traction: {business_idea.current_traction}")
+
+    if business_idea.vision:
+        lines.append(f"Vision: {business_idea.vision}")
+
+    lines.append(f"Investment Needed: {business_idea.investment_needed}")
+    lines.append(f"Use of Funds: {business_idea.use_of_funds}")
+
+    return "\n".join(lines)
+
 # ===== STEP 3: Global State =====
 
 conversation_history: List[Dict[str, str]] = []
@@ -90,6 +146,8 @@ judge_agents: List[Agent] = []
 current_judges_config: List[Dict[str, str]] = []
 entrepreneur_name: str = ""
 judge_collaboration_history: List[Dict[str, str]] = []  # Track judge-to-judge communication
+judge_decisions: Dict[str, str] = {}  # Track judge decisions: "in", "out", or "undecided"
+judge_question_count: Dict[str, int] = {}  # Track how many questions each judge has asked
 
 # ===== STEP 4: Agent Creation Functions =====
 # Migrated from Step 7 (judge notebook) and Step 7 (entrepreneur notebook)
@@ -118,16 +176,19 @@ def create_default_judge_agents() -> List[Agent]:
             • Real evidence of market validation
 
             You can collaborate with other judges by considering their perspectives.
+            Consider whether other judges are investing - this may influence your decision.
 
-            You must ask a MAXIMUM of 3 market-related questions.
+            You must ask a MAXIMUM of 2 market-related questions. Be decisive and get to your decision quickly.
 
-            Rules:
+            CRITICAL RULES:
             1. Only ONE question per turn.
             2. Only market-focused questions (no finance, no tech).
             3. Never repeat a question.
-            4. After asking 3 total questions → you MUST give a final decision:
-               - "I will invest because..."
-               - "I'm out because..."
+            4. After asking 2 total questions → you MUST give a final decision:
+               - "I'm in" or "I will invest because..."
+               - "I'm out" or "I'm out because..."
+            5. ONCE YOU SAY "I'm in" OR "I'm out", YOU CANNOT CHANGE YOUR DECISION.
+            6. After making your decision, you can only make comments to help other judges, NO MORE QUESTIONS.
             """,
             "backstory": """
             You are a Shark Tank Market Judge.
@@ -147,10 +208,12 @@ def create_default_judge_agents() -> List[Agent]:
             • You collaborate with other judges and consider their perspectives
 
             Behavioral Rules:
-            • Ask 1 question per message.
+            • Ask 1 question per message (MAX 2 questions total).
             • Only market questions.
             • No repetitive questions.
-            • Stop after 3 questions and deliver a final verdict.
+            • Stop after 2 questions and deliver a final verdict.
+            • Once you decide IN or OUT, you cannot change it.
+            • After deciding, only make comments to help other judges.
             """
         },
         {
@@ -168,12 +231,16 @@ def create_default_judge_agents() -> List[Agent]:
             • Opportunity cost of investment
 
             You can collaborate with other judges by considering their perspectives.
+            Consider whether other judges are investing - this may influence your decision.
 
-            Rules:
+            CRITICAL RULES:
             1. Ask ONLY financial questions.
             2. One question per turn.
             3. Be extremely strict with numbers and assumptions.
-            4. After 3–4 questions → MUST make a final investment decision.
+            4. After MAXIMUM 2 questions → MUST make a final investment decision.
+            5. Be decisive - don't ask unnecessary questions if you have enough information.
+            6. ONCE YOU SAY "I'm in" OR "I'm out", YOU CANNOT CHANGE YOUR DECISION.
+            7. After making your decision, you can only make comments to help other judges, NO MORE QUESTIONS.
             """,
             "backstory": """
             You are Marcus, a former Wall Street private equity analyst and fractional CFO.
@@ -199,12 +266,16 @@ def create_default_judge_agents() -> List[Agent]:
             • Real innovation vs buzzwords
 
             You can collaborate with other judges by considering their perspectives.
+            Consider whether other judges are investing - this may influence your decision.
 
-            Rules:
+            CRITICAL RULES:
             1. Ask ONE technical question per message.
             2. No general business or financial questions.
             3. Push the entrepreneur to explain architecture clearly, no vague claims.
-            4. After 3-4 total questions → mandatory technical verdict (IN or OUT).
+            4. After MAXIMUM 2 total questions → mandatory technical verdict (IN or OUT).
+            5. Be decisive - don't ask unnecessary questions if you have enough information.
+            6. ONCE YOU SAY "I'm in" OR "I'm out", YOU CANNOT CHANGE YOUR DECISION.
+            7. After making your decision, you can only make comments to help other judges, NO MORE QUESTIONS.
             """,
             "backstory": """
             You are Elena, a senior CTO with 20 years designing scalable distributed systems.
@@ -268,6 +339,86 @@ If a judge challenges you, respond professionally, strategically, and convincing
 # ===== STEP 5: Core Logic Functions =====
 # Migrated from notebooks' task creation and crew execution
 
+def detect_judge_decision(response_text: str) -> Optional[str]:
+    """
+    Detect if a judge has made an investment decision from their response.
+    Returns: "in", "out", or None if undecided
+    """
+    response_lower = response_text.lower()
+    
+    # Check for "in" decision
+    in_indicators = [
+        "i'm in",
+        "i am in",
+        "i will invest",
+        "i'll invest",
+        "i'm investing",
+        "i am investing",
+        "i want to invest",
+        "i'd like to invest",
+        "count me in",
+        "i'm making an offer",
+        "i'll make an offer"
+    ]
+    
+    # Check for "out" decision
+    out_indicators = [
+        "i'm out",
+        "i am out",
+        "i'm going out",
+        "i'm not investing",
+        "i won't invest",
+        "i will not invest",
+        "i can't invest",
+        "i cannot invest",
+        "i'm passing",
+        "i pass"
+    ]
+    
+    for indicator in in_indicators:
+        if indicator in response_lower:
+            return "in"
+    
+    for indicator in out_indicators:
+        if indicator in response_lower:
+            return "out"
+    
+    return None
+
+def count_questions_in_response(response_text: str) -> int:
+    """
+    Count the number of questions in a judge's response.
+    """
+    question_marks = response_text.count("?")
+    # Count question words at start of sentences
+    question_words = ["what", "how", "why", "when", "where", "who", "which", "can you", "do you", "are you", "is it", "will you"]
+    question_count = question_marks
+    
+    # Additional check for question words
+    for word in question_words:
+        if word in response_text.lower():
+            question_count = max(question_count, response_text.lower().count(word))
+    
+    return min(question_marks, question_count) if question_marks > 0 else 0
+
+def get_judge_decisions_summary() -> str:
+    """
+    Get a summary of all judges' investment decisions.
+    """
+    if not judge_decisions:
+        return "No judges have made decisions yet."
+    
+    summary_parts = []
+    for judge_name, decision in judge_decisions.items():
+        if decision == "in":
+            summary_parts.append(f"{judge_name}: IN (investing)")
+        elif decision == "out":
+            summary_parts.append(f"{judge_name}: OUT (not investing)")
+    
+    if summary_parts:
+        return "Current Investment Status:\n" + "\n".join(summary_parts)
+    return "No judges have made final decisions yet."
+
 def generate_initial_pitch(business_idea: BusinessIdea, entrepreneur_name: str) -> str:
     """
     Generate initial pitch for the business idea
@@ -280,14 +431,8 @@ def generate_initial_pitch(business_idea: BusinessIdea, entrepreneur_name: str) 
 
         Your name is {entrepreneur_name}.
 
-        Your business idea:
-        Name: {business_idea.name}
-        Description: {business_idea.description}
-        Target Market: {business_idea.target_market}
-        Revenue Model: {business_idea.revenue_model}
-        Current Traction: {business_idea.current_traction}
-        Investment Needed: {business_idea.investment_needed}
-        Use of Funds: {business_idea.use_of_funds}
+        Business Idea Details:
+        {business_idea_summary(business_idea)}
 
         Start your pitch by greeting the judges: "Hello Sharks, I'm {entrepreneur_name}..."
         
@@ -329,40 +474,89 @@ async def generate_judge_responses_with_collaboration(
             judge_name = judge_msg.get("judge_name", "Unknown")
             content = judge_msg.get("content", "")[:200]
             collaboration_context += f"- {judge_name}: {content}...\n"
+    
+    # Get summary of other judges' decisions
+    decisions_summary = get_judge_decisions_summary()
 
     # Generate response from EACH judge with collaboration context
     for idx, judge_agent in enumerate(judge_agents):
         judge_name = current_judges_config[idx]['name'] if idx < len(current_judges_config) else f"Judge {idx + 1}"
         judge_role = current_judges_config[idx]['role'] if idx < len(current_judges_config) else judge_agent.role
         
-        task = Task(
-            description=f"""You are {judge_name}, the {judge_role}. Evaluate the entrepreneur's pitch and respond appropriately.
+        # Check if judge has already made a decision
+        has_decided = judge_decisions.get(judge_name) in ["in", "out"]
+        current_decision = judge_decisions.get(judge_name, "undecided")
+        questions_asked = judge_question_count.get(judge_name, 0)
+        
+        # Build task description based on decision status
+        if has_decided:
+            # Judge has already decided - only allow comments
+            task_description = f"""You are {judge_name}, the {judge_role}. You have ALREADY made your investment decision: {current_decision.upper()}.
+
+            CRITICAL: You CANNOT change your decision. You have already decided to be {current_decision.upper()}.
 
             Business being evaluated:
-            Name: {business_idea.name}
-            Description: {business_idea.description}
-            Target Market: {business_idea.target_market}
-            Revenue Model: {business_idea.revenue_model}
-            Current Traction: {business_idea.current_traction}
-            Investment Needed: {business_idea.investment_needed}
-            Use of Funds: {business_idea.use_of_funds}
+            {business_idea_summary(business_idea)}
 
             Conversation history:
             {context}
             
             {collaboration_context}
 
+            {decisions_summary}
+
+            YOUR ROLE NOW:
+            - You can only make brief comments to help other judges
+            - You CANNOT ask questions
+            - You CANNOT change your decision
+            - Keep your comments short and focused on helping others make their decision
+            - If other judges are investing, you can acknowledge that
+            - If you're out and others are in, you can explain why you're out briefly
+            
+            IMPORTANT: Start your response with "{judge_name}: " to identify yourself clearly."""
+        else:
+            # Judge hasn't decided yet - can ask questions or make decision
+            max_questions = 2
+            remaining_questions = max_questions - questions_asked
+            
+            if remaining_questions <= 0:
+                # Must make decision now
+                decision_instruction = "You have asked your maximum questions. You MUST make your final investment decision NOW: either 'I'm in' or 'I'm out'."
+            else:
+                decision_instruction = f"You can ask up to {remaining_questions} more question(s), OR make your decision now if you have enough information. Be decisive - don't ask unnecessary questions."
+            
+            task_description = f"""You are {judge_name}, the {judge_role}. Evaluate the entrepreneur's pitch and respond appropriately.
+
+            Business being evaluated:
+            {business_idea_summary(business_idea)}
+
+            Conversation history:
+            {context}
+            
+            {collaboration_context}
+
+            {decisions_summary}
+
             IMPORTANT COLLABORATION INSTRUCTIONS:
             - Consider the perspectives of other judges mentioned above
+            - Consider whether other judges are investing - this may influence your decision
             - You can reference or build upon their questions/concerns
             - If another judge has raised a valid point, you can acknowledge it
             - However, maintain your own unique perspective and expertise
 
-            Respond with your thoughts, questions or investment decision. Be critical but constructive.
-            If you need more information, ask specific questions. If you have enough information,
-            make your final investment decision.
+            {decision_instruction}
+
+            CRITICAL RULES:
+            - You can ask ONE question OR make your decision
+            - If you make a decision, say clearly "I'm in" or "I'm out"
+            - ONCE YOU DECIDE, YOU CANNOT CHANGE IT
+            - Be decisive - if you have enough information, make your decision now
+            - Questions asked so far: {questions_asked}/{max_questions}
             
-            IMPORTANT: Start your response with "{judge_name}: " to identify yourself clearly.""",
+            IMPORTANT: Start your response with "{judge_name}: " to identify yourself clearly."""
+        
+        task = Task(
+            description=task_description,
             expected_output="Evaluation and feedback on the entrepreneur's pitch with consideration of other judges' perspectives",
             agent=judge_agent,
         )
@@ -373,11 +567,27 @@ async def generate_judge_responses_with_collaboration(
         )
 
         result = crew.kickoff()
+        response_text = result.raw
+        
+        # Detect if judge made a decision
+        detected_decision = detect_judge_decision(response_text)
+        if detected_decision and not has_decided:
+            judge_decisions[judge_name] = detected_decision
+            logger.info(f"Judge {judge_name} made decision: {detected_decision}")
+        
+        # Count questions if judge hasn't decided
+        if not has_decided:
+            questions_in_response = count_questions_in_response(response_text)
+            if questions_in_response > 0:
+                judge_question_count[judge_name] = questions_asked + questions_in_response
+                logger.info(f"Judge {judge_name} has asked {judge_question_count[judge_name]} questions total")
         
         response_dict = {
             "judge_name": judge_name,
             "judge_role": judge_role,
-            "content": result.raw
+            "content": response_text,
+            "decision": judge_decisions.get(judge_name, "undecided"),
+            "questions_asked": judge_question_count.get(judge_name, 0)
         }
         
         responses.append(response_dict)
@@ -385,7 +595,8 @@ async def generate_judge_responses_with_collaboration(
         # Add to collaboration history for next round
         judge_collaboration_history.append({
             "judge_name": judge_name,
-            "content": result.raw
+            "content": response_text,
+            "decision": judge_decisions.get(judge_name, "undecided")
         })
     
     return responses
@@ -403,14 +614,8 @@ def generate_entrepreneur_response(business_idea: BusinessIdea, conversation: Li
     task = Task(
         description=f"""Respond to the Shark Tank judge's feedback or questions.
 
-        Your business idea:
-        Name: {business_idea.name}
-        Description: {business_idea.description}
-        Target Market: {business_idea.target_market}
-        Revenue Model: {business_idea.revenue_model}
-        Current Traction: {business_idea.current_traction}
-        Investment Needed: {business_idea.investment_needed}
-        Use of Funds: {business_idea.use_of_funds}
+        Business idea details:
+        {business_idea_summary(business_idea)}
 
         Conversation history:
         {context}
@@ -485,12 +690,14 @@ async def start_pitch(request: ChatRequest):
     Initialize a new pitch session
     Original: initiate_pitch() from entrepreneur notebook
     """
-    global conversation_history, current_business_idea, judge_agents, current_judges_config, entrepreneur_name, judge_collaboration_history
+    global conversation_history, current_business_idea, judge_agents, current_judges_config, entrepreneur_name, judge_collaboration_history, judge_decisions, judge_question_count
     
     try:
         # Reset conversation
         conversation_history = []
         judge_collaboration_history = []
+        judge_decisions = {}
+        judge_question_count = {}
         current_business_idea = request.business_idea
         entrepreneur_name = request.entrepreneur_name or "Entrepreneur"
         
@@ -605,16 +812,20 @@ async def get_conversation_history():
     return {
         "conversation_history": conversation_history,
         "business_idea": current_business_idea.dict() if current_business_idea else None,
-        "judge_collaboration_history": judge_collaboration_history
+        "judge_collaboration_history": judge_collaboration_history,
+        "judge_decisions": judge_decisions,
+        "judge_question_count": judge_question_count
     }
 
 @app.post("/api/reset")
 async def reset_conversation():
     """Reset the conversation and start fresh"""
-    global conversation_history, current_business_idea, judge_agents, current_judges_config, entrepreneur_name, judge_collaboration_history
+    global conversation_history, current_business_idea, judge_agents, current_judges_config, entrepreneur_name, judge_collaboration_history, judge_decisions, judge_question_count
     
     conversation_history = []
     judge_collaboration_history = []
+    judge_decisions = {}
+    judge_question_count = {}
     current_business_idea = None
     judge_agents = []
     current_judges_config = []
