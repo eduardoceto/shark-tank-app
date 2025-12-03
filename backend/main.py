@@ -250,7 +250,7 @@ def create_default_judge_agents() -> List[Agent]:
             """
         },
         {
-            "name": "Elena",
+            "name": "Ryan",
             "role": "Technology Judge",
             "goal": """
             Evaluate the startup from a technology feasibility and scalability viewpoint:
